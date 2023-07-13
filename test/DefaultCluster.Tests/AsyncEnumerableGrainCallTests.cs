@@ -108,6 +108,57 @@ public class AsyncEnumerableGrainCallTests : HostedTestClusterEnsureDefaultStart
     }
 
     [Fact, TestCategory("BVT"), TestCategory("Observable")]
+    public async Task ObservableGrain_AsyncEnumerable_Multicast()
+    {
+        var grain = GrainFactory.GetGrain<IObservableGrain>(Guid.NewGuid());
+
+        foreach (var value in Enumerable.Range(0, 50))
+        {
+            await grain.OnNext(value.ToString());
+        }
+
+        await grain.Complete();
+
+        var values = new List<string>();
+        var consumerTask1 = Task.Run(async () =>
+        {
+            await foreach (var value in grain.GetValues().WithMulticast())
+            {
+                values.Add(value);
+                Logger.LogInformation("ObservableGrain_AsyncEnumerable: {Entry}", value);
+            }
+        });
+        var consumerTask2 = Task.Run(async () =>
+        {
+            await foreach (var value in grain.GetValues().WithMulticast())
+            {
+                values.Add(value);
+                Logger.LogInformation("ObservableGrain_AsyncEnumerable: {Entry}", value);
+            }
+        });
+
+        await Task.WhenAll(consumerTask1, consumerTask2);
+
+        // The test isn't 100% deterministic, as the enumeration will start
+        // a little haphazardly. This is probably easily fixed by someone
+        // smarter than me.
+        Assert.True(95 < values.Count);
+
+        var grainCalls = await grain.GetIncomingCalls();
+        var moveNextCallCount = grainCalls.Count(element =>
+            element.InterfaceName.Contains(nameof(IAsyncEnumerableGrainExtension))
+            && (element.MethodName.Contains(nameof(IAsyncEnumerableGrainExtension.MoveNext)) ||
+                element.MethodName.Contains(nameof(IAsyncEnumerableGrainExtension.StartEnumeration))));
+        Assert.True(moveNextCallCount < values.Count);
+
+        // Check that the enumerator is disposed
+        Assert.Contains(grainCalls,
+            c => c.InterfaceName.Contains(nameof(IAsyncEnumerableGrainExtension)) &&
+                 c.MethodName.Contains(nameof(IAsyncDisposable.DisposeAsync)));
+    }
+
+
+    [Fact, TestCategory("BVT"), TestCategory("Observable")]
     public async Task ObservableGrain_AsyncEnumerable_NoBatching()
     {
         var grain = GrainFactory.GetGrain<IObservableGrain>(Guid.NewGuid());
