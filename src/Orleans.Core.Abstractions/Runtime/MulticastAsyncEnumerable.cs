@@ -1,5 +1,5 @@
 //
-// Blatantly stolen from here: https://gist.github.com/egil/c517eba3aacb60777e629eff4743c80a
+// Heavily inspired by this: https://gist.github.com/egil/c517eba3aacb60777e629eff4743c80a
 //
 
 using System;
