@@ -1,8 +1,6 @@
 //
 // Blatantly stolen from here: https://gist.github.com/egil/c517eba3aacb60777e629eff4743c80a
 //
-// The code was originally written by @egil and is licensed under the MIT license. It was changed
-// to better fit this purpose.
 
 using System;
 using System.Collections.Generic;
