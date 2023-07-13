@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.Serialization;
@@ -98,6 +99,8 @@ public interface IAsyncEnumerableRequest<T> : IRequest
     /// </summary>
     int MaxBatchSize { get; set; }
 
+    bool IsMulticast { get; set; }
+
     /// <summary>
     /// Invokes the request.
     /// </summary>
@@ -124,6 +127,8 @@ public abstract class AsyncEnumerableRequest<T> : RequestBase, IAsyncEnumerable<
     [Id(0)]
     public int MaxBatchSize { get; set; } = 100;
 
+    [Id(1)] public bool IsMulticast { get; set; } = false;
+
     /// <inheritdoc/>
     public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default) => new AsyncEnumeratorProxy<T>(this, cancellationToken);
 
@@ -137,8 +142,29 @@ public abstract class AsyncEnumerableRequest<T> : RequestBase, IAsyncEnumerable<
     /// <inheritdoc/>
     public override ValueTask<Response> Invoke() => throw new NotImplementedException($"{nameof(IAsyncEnumerable<T>)} requests can not be invoked directly");
 
+    private static readonly ConcurrentDictionary<string, IAsyncEnumerable<T>> MulticastEnumerators = new();
+
     /// <inheritdoc/>
-    public IAsyncEnumerable<T> InvokeImplementation() => InvokeInner();
+    public IAsyncEnumerable<T> InvokeImplementation()
+    {
+        var source = InvokeInner();
+        if (IsMulticast == true)
+        {
+            var key = GetInterfaceName() + "." + GetMethodName();
+            var multicastEnumerable = new MulticastAsyncEnumerable<T>(source)
+            {
+                Completed = () =>
+                {
+                    MulticastEnumerators.Remove(key, out _);
+                }
+            };
+            return MulticastEnumerators.GetOrAdd(key, (_) => multicastEnumerable);
+        }
+        else
+        {
+            return source;
+        }
+    }
 
     // Generated
     protected abstract IAsyncEnumerable<T> InvokeInner();
@@ -283,6 +309,16 @@ public static class AsyncEnumerableExtensions
         {
             request.MaxBatchSize = maxBatchSize;
             return request;
+        }
+
+        return self;
+    }
+
+    public static IAsyncEnumerable<T> WithMulticast<T>(this IAsyncEnumerable<T> self)
+    {
+        if (self is AsyncEnumerableRequest<T> request)
+        {
+            request.IsMulticast = true;
         }
 
         return self;
